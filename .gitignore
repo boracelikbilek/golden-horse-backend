@@ -3,6 +3,7 @@
 .env
 .env.backup
 .env.production
+/config/goldenhorse.php
 .phpactor.json
 .phpunit.result.cache
 /.codex

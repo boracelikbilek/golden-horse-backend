@@ -6,17 +6,34 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
+            $table->string('phone')->unique()->nullable();
             $table->timestamp('email_verified_at')->nullable();
+            $table->timestamp('phone_verified_at')->nullable();
             $table->string('password');
+
+            // Role & tenancy
+            $table->enum('role', ['superadmin', 'tenant_owner', 'bayi_owner', 'cashier', 'customer'])->default('customer');
+            $table->unsignedBigInteger('tenant_id')->nullable()->index();
+            $table->unsignedBigInteger('bayi_id')->nullable()->index();
+            $table->unsignedBigInteger('store_id')->nullable()->index();
+
+            // Loyalty (legacy/global; per-tenant data in customer_tenant_stats)
+            $table->enum('tier', ['green', 'gold'])->default('green');
+            $table->unsignedInteger('stars')->default(0);
+            $table->unsignedInteger('star_target')->default(150);
+            $table->unsignedInteger('reward_drinks_available')->default(0);
+            $table->decimal('card_balance', 10, 2)->default(0);
+            $table->string('currency', 3)->default('TRY');
+            $table->date('join_date')->nullable();
+            $table->string('avatar')->nullable();
+            $table->json('notifications')->nullable();
+
             $table->rememberToken();
             $table->timestamps();
         });
@@ -37,9 +54,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('users');
