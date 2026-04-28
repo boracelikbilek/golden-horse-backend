@@ -72,7 +72,7 @@ class DashboardController extends Controller
         $bayis  = Bayi::where('tenant_id', $tenantId)->withCount(['stores', 'orders'])->get();
         $stores = Store::forTenant($tenant)->with('bayi')->get();
 
-        $base = Order::query()->from('orders')->where('tenant_id', $tenantId);
+        $base = Order::query()->from('orders')->where('orders.tenant_id', $tenantId);
 
         $totals = [
             'bayis'     => $bayis->count(),
@@ -115,7 +115,7 @@ class DashboardController extends Controller
         $bayi = Bayi::with('tenant')->findOrFail($bayiId);
         $stores = Store::where('bayi_id', $bayi->id)->get();
 
-        $base = Order::query()->from('orders')->where('bayi_id', $bayi->id);
+        $base = Order::query()->from('orders')->where('orders.bayi_id', $bayi->id);
 
         $totals = [
             'stores'   => $stores->count(),
