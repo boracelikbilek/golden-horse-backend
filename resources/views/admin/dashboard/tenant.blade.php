@@ -15,9 +15,11 @@
     <div class="col"><div class="card stat-card"><div class="label">Toplam Ciro</div><div class="value">{{ number_format($totals['revenue'], 2, ',', '.') }} ₺</div></div></div>
 </div>
 
+@include('admin.dashboard._charts', ['charts' => $charts])
+
 <div class="card mb-4">
     <div class="card-body">
-        <h5 class="mb-3">Bayilere göre satış</h5>
+        <h5 class="mb-3">Bayilere göre satış (özet tablo)</h5>
         <table class="table table-clean align-middle">
             <thead><tr><th>Bayi</th><th>Sahip</th><th>Şube</th><th>Sipariş</th><th>Son 7 gün</th><th>Ciro</th></tr></thead>
             <tbody>

@@ -13,6 +13,8 @@
     <div class="col"><div class="card stat-card"><div class="label">Toplam Ciro</div><div class="value">{{ number_format($totals['revenue'], 2, ',', '.') }} ₺</div></div></div>
 </div>
 
+@include('admin.dashboard._charts', ['charts' => $charts])
+
 <div class="card mb-4">
     <div class="card-body">
         <h5 class="mb-3">Tenant'lar</h5>

@@ -8,7 +8,7 @@ use App\Models\CustomerTenantStat;
 use App\Models\Order;
 use App\Models\Store;
 use App\Models\Tenant;
-use App\Models\User;
+use App\Services\Analytics;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -49,10 +49,21 @@ class DashboardController extends Controller
             'revenue'   => (float) Order::sum('total'),
         ];
 
-        $recentOrders = Order::with(['user', 'tenant', 'bayi', 'store'])
-            ->orderByDesc('created_at')->limit(20)->get();
+        $analytics = new Analytics(Order::query()->from('orders'));
 
-        return view('admin.dashboard.superadmin', compact('tenants', 'totals', 'recentOrders'));
+        $charts = [
+            'topTenants'   => $analytics->topTenants(),
+            'topProducts'  => $analytics->topProducts(),
+            'topBayis'     => $analytics->topBayis(),
+            'topCustomers' => $analytics->topCustomers(),
+            'daily'        => $analytics->dailyRevenue(30),
+            'hourly'       => $analytics->hourlyDistribution(30),
+        ];
+
+        $recentOrders = Order::with(['user', 'tenant', 'bayi', 'store'])
+            ->orderByDesc('created_at')->limit(10)->get();
+
+        return view('admin.dashboard.superadmin', compact('tenants', 'totals', 'recentOrders', 'charts'));
     }
 
     private function tenantDashboard(int $tenantId)
@@ -61,30 +72,42 @@ class DashboardController extends Controller
         $bayis  = Bayi::where('tenant_id', $tenantId)->withCount(['stores', 'orders'])->get();
         $stores = Store::forTenant($tenant)->with('bayi')->get();
 
-        $orders = Order::forTenant($tenant);
+        $base = Order::query()->from('orders')->where('tenant_id', $tenantId);
+
         $totals = [
             'bayis'     => $bayis->count(),
             'stores'    => $stores->count(),
-            'orders'    => (clone $orders)->count(),
+            'orders'    => (clone $base)->count(),
             'customers' => CustomerTenantStat::where('tenant_id', $tenantId)->count(),
-            'revenue'   => (float) (clone $orders)->sum('total'),
+            'revenue'   => (float) (clone $base)->sum('total'),
+        ];
+
+        $analytics = new Analytics($base);
+        $charts = [
+            'topBayis'         => $analytics->topBayis(),
+            'topStores'        => $analytics->topStores(),
+            'topProducts'      => $analytics->topProducts(),
+            'topCustomers'     => $analytics->topCustomers(),
+            'topProductPerBayi'=> $analytics->topProductPerBayi(),
+            'daily'            => $analytics->dailyRevenue(30),
+            'hourly'           => $analytics->hourlyDistribution(30),
         ];
 
         $perBayi = $bayis->map(function ($b) use ($tenantId) {
             $bayiOrders = Order::where('tenant_id', $tenantId)->where('bayi_id', $b->id);
             return [
-                'bayi'     => $b,
-                'orders'   => (clone $bayiOrders)->count(),
-                'revenue'  => (float) (clone $bayiOrders)->sum('total'),
-                'last7d'   => (clone $bayiOrders)->where('created_at', '>=', now()->subDays(7))->count(),
+                'bayi'    => $b,
+                'orders'  => (clone $bayiOrders)->count(),
+                'revenue' => (float) (clone $bayiOrders)->sum('total'),
+                'last7d'  => (clone $bayiOrders)->where('created_at', '>=', now()->subDays(7))->count(),
             ];
         });
 
-        $recentOrders = Order::forTenant($tenant)
+        $recentOrders = Order::where('tenant_id', $tenantId)
             ->with(['user', 'bayi', 'store'])
-            ->orderByDesc('created_at')->limit(20)->get();
+            ->orderByDesc('created_at')->limit(10)->get();
 
-        return view('admin.dashboard.tenant', compact('tenant', 'bayis', 'stores', 'totals', 'perBayi', 'recentOrders'));
+        return view('admin.dashboard.tenant', compact('tenant', 'bayis', 'stores', 'totals', 'charts', 'perBayi', 'recentOrders'));
     }
 
     private function bayiDashboard(?int $bayiId)
@@ -92,32 +115,29 @@ class DashboardController extends Controller
         $bayi = Bayi::with('tenant')->findOrFail($bayiId);
         $stores = Store::where('bayi_id', $bayi->id)->get();
 
-        $orders = Order::where('bayi_id', $bayi->id);
+        $base = Order::query()->from('orders')->where('bayi_id', $bayi->id);
+
         $totals = [
             'stores'   => $stores->count(),
-            'orders'   => (clone $orders)->count(),
-            'revenue'  => (float) (clone $orders)->sum('total'),
-            'last7d'   => (clone $orders)->where('created_at', '>=', now()->subDays(7))->count(),
-            'today'    => (clone $orders)->whereDate('created_at', today())->count(),
+            'orders'   => (clone $base)->count(),
+            'revenue'  => (float) (clone $base)->sum('total'),
+            'last7d'   => (clone $base)->where('created_at', '>=', now()->subDays(7))->count(),
+            'today'    => (clone $base)->whereDate('created_at', today())->count(),
         ];
 
-        $perStore = $stores->map(function ($s) {
-            $sOrders = Order::where('store_id', $s->id);
-            return [
-                'store'   => $s,
-                'orders'  => (clone $sOrders)->count(),
-                'revenue' => (float) (clone $sOrders)->sum('total'),
-                'today'   => (clone $sOrders)->whereDate('created_at', today())->count(),
-            ];
-        });
-
-        $topCustomers = CustomerTenantStat::where('tenant_id', $bayi->tenant_id)
-            ->with('user')->orderByDesc('lifetime_orders')->limit(10)->get();
+        $analytics = new Analytics($base);
+        $charts = [
+            'topStores'    => $analytics->topStores(),
+            'topProducts'  => $analytics->topProducts(),
+            'topCustomers' => $analytics->topCustomers(),
+            'daily'        => $analytics->dailyRevenue(30),
+            'hourly'       => $analytics->hourlyDistribution(30),
+        ];
 
         $recentOrders = Order::where('bayi_id', $bayi->id)
             ->with(['user', 'store'])
-            ->orderByDesc('created_at')->limit(20)->get();
+            ->orderByDesc('created_at')->limit(10)->get();
 
-        return view('admin.dashboard.bayi', compact('bayi', 'stores', 'totals', 'perStore', 'topCustomers', 'recentOrders'));
+        return view('admin.dashboard.bayi', compact('bayi', 'stores', 'totals', 'charts', 'recentOrders'));
     }
 }

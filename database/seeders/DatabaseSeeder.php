@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             CampaignSeeder::class,
             BadgeSeeder::class,
             DemoCustomerSeeder::class,
+            DemoOrderSeeder::class,
         ]);
     }
 }
