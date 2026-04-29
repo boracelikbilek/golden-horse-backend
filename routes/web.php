@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ScannerController;
+use App\Http\Controllers\Admin\WalletController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -23,6 +24,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('scanner',          [ScannerController::class, 'show'])->name('scanner');
         Route::post('scanner/resolve', [ScannerController::class, 'resolve'])->name('scanner.resolve');
         Route::post('scanner/order',   [ScannerController::class, 'createOrder'])->name('scanner.order');
+
+        Route::get('wallet',         [WalletController::class, 'show'])->name('wallet');
+        Route::post('wallet/topup',  [WalletController::class, 'topup'])->name('wallet.topup');
 
         Route::get('orders',         [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');

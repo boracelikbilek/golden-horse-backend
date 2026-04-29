@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\QrSession;
 use App\Models\User;
+use App\Models\WalletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -62,6 +63,7 @@ class ScannerController extends Controller
             'token'      => ['required', 'string'],
             'total'      => ['required', 'numeric', 'min:0.01'],
             'note'       => ['nullable', 'string', 'max:500'],
+            'pay_from_balance' => ['sometimes', 'boolean'],
             'items'      => ['nullable', 'array'],
             'items.*.product_id' => ['nullable', 'integer'],
             'items.*.name'       => ['required_with:items', 'string'],
@@ -81,7 +83,12 @@ class ScannerController extends Controller
             return back()->withErrors(['store' => 'Kasiyere şube atanmamış.']);
         }
 
-        $order = DB::transaction(function () use ($cashier, $customer, $tenantId, $data, $session) {
+        $payFromBalance = (bool) ($data['pay_from_balance'] ?? false);
+        if ($payFromBalance && (float) $customer->card_balance < (float) $data['total']) {
+            return back()->withErrors(['balance' => 'Müşterinin bakiyesi yetersiz.']);
+        }
+
+        $order = DB::transaction(function () use ($cashier, $customer, $tenantId, $data, $session, $payFromBalance) {
             $stars = max(1, (int) floor($data['total'] / 25)); // 25 TL = 1 yildiz
 
             $order = Order::create([
@@ -117,6 +124,21 @@ class ScannerController extends Controller
             $stats->increment('lifetime_orders');
             $stats->increment('lifetime_spent', (float) $order->total);
             $stats->update(['last_order_at' => now()]);
+
+            // Bakiyeden odendiyse cuzdana harcama satiri ekle
+            if ($payFromBalance) {
+                WalletTransaction::record([
+                    'tenant_id'  => $tenantId,
+                    'user_id'    => $customer->id,
+                    'bayi_id'    => $cashier->bayi_id,
+                    'store_id'   => $cashier->store_id,
+                    'order_id'   => $order->id,
+                    'cashier_id' => $cashier->id,
+                    'type'       => WalletTransaction::TYPE_PURCHASE,
+                    'amount'     => -1 * (float) $order->total,
+                    'reason'     => "Sipariş #{$order->id}",
+                ]);
+            }
 
             // QR session'i yak
             $session->update([

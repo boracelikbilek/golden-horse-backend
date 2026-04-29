@@ -34,6 +34,7 @@
                 <li class="nav-item"><a class="nav-link" href="{{ route('admin.dashboard') }}">Panel</a></li>
                 @if(auth()->user()->isCashier() || auth()->user()->isAdminLike())
                     <li class="nav-item"><a class="nav-link" href="{{ route('admin.scanner') }}">📷 QR Tara</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ route('admin.wallet') }}">💳 TL Yükle</a></li>
                 @endif
                 <li class="nav-item"><a class="nav-link" href="{{ route('admin.orders.index') }}">Siparişler</a></li>
                 @if(auth()->user()->isTenantOwner() || auth()->user()->isSuperadmin())

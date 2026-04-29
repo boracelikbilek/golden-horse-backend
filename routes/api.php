@@ -23,9 +23,10 @@ Route::prefix('v1')->group(function () {
     // Authenticated
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
-        Route::get('/me',           [AuthController::class, 'me']);
-        Route::get('/me/stats',     [MeController::class, 'stats']);
-        Route::get('/me/orders',    [MeController::class, 'orders']);
+        Route::get('/me',              [AuthController::class, 'me']);
+        Route::get('/me/stats',        [MeController::class, 'stats']);
+        Route::get('/me/orders',       [MeController::class, 'orders']);
+        Route::get('/me/transactions', [MeController::class, 'transactions']);
         Route::get('/badges',       [CatalogController::class, 'badges']);
         Route::post('/qr/rotate',   [QrController::class, 'rotate']);
     });
