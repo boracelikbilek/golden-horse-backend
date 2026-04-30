@@ -46,7 +46,7 @@ return [
         'client'  => $gh['redis']['client'],
         'options' => [
             'cluster'    => 'redis',
-            'prefix'     => Str::slug($gh['app']['name']).'-database-',
+            'prefix'     => $gh['redis']['prefix'] ?? 'gh:',
             'persistent' => false,
         ],
         'default' => [
@@ -54,14 +54,14 @@ return [
             'username' => null,
             'password' => $gh['redis']['password'],
             'port'     => $gh['redis']['port'],
-            'database' => 0,
+            'database' => $gh['redis']['default_db'] ?? 0,
         ],
         'cache' => [
             'host'     => $gh['redis']['host'],
             'username' => null,
             'password' => $gh['redis']['password'],
             'port'     => $gh['redis']['port'],
-            'database' => 1,
+            'database' => $gh['redis']['cache_db'] ?? 1,
         ],
     ],
 

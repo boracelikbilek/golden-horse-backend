@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class CustomerTenantStat extends Model
 {
@@ -30,20 +31,30 @@ class CustomerTenantStat extends Model
 
     public function awardStars(int $points, ?Order $order = null, ?string $reason = null): PointTransaction
     {
-        $this->increment('stars', $points);
+        return DB::transaction(function () use ($points, $order, $reason) {
+            // Satiri kilitle ve guncel degerleri oku -> balance_after race-free
+            /** @var self $locked */
+            $locked = self::whereKey($this->id)->lockForUpdate()->first();
 
-        if ($this->stars >= $this->star_target && $this->tier === 'green') {
-            $this->update(['tier' => 'gold']);
-        }
+            $newBalance = (int) $locked->stars + $points;
+            $payload = ['stars' => $newBalance];
+            if ($newBalance >= $locked->star_target && $locked->tier === 'green') {
+                $payload['tier'] = 'gold';
+            }
+            $locked->update($payload);
 
-        return PointTransaction::create([
-            'tenant_id'     => $this->tenant_id,
-            'user_id'       => $this->user_id,
-            'order_id'      => $order?->id,
-            'type'          => 'earn',
-            'points'        => $points,
-            'balance_after' => $this->fresh()->stars,
-            'reason'        => $reason ?? ($order ? "Sipariş #{$order->id}" : null),
-        ]);
+            // Disardaki bu instance'in da senkron kalmasi icin
+            $this->fill($payload)->syncOriginal();
+
+            return PointTransaction::create([
+                'tenant_id'     => $locked->tenant_id,
+                'user_id'       => $locked->user_id,
+                'order_id'      => $order?->id,
+                'type'          => 'earn',
+                'points'        => $points,
+                'balance_after' => $newBalance,
+                'reason'        => $reason ?? ($order ? "Sipariş #{$order->id}" : null),
+            ]);
+        });
     }
 }

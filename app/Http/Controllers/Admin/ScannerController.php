@@ -71,12 +71,6 @@ class ScannerController extends Controller
             'items.*.quantity'   => ['required_with:items', 'integer', 'min:1'],
         ]);
 
-        $session = QrSession::where('token', $data['token'])->first();
-        if (! $session || ! $session->isValid()) {
-            return back()->withErrors(['token' => 'QR kod geçersiz.']);
-        }
-
-        $customer = $session->user;
         $tenantId = $cashier->tenant_id;
 
         if ($cashier->isCashier() && $cashier->store_id === null) {
@@ -84,70 +78,87 @@ class ScannerController extends Controller
         }
 
         $payFromBalance = (bool) ($data['pay_from_balance'] ?? false);
-        if ($payFromBalance && (float) $customer->card_balance < (float) $data['total']) {
-            return back()->withErrors(['balance' => 'Müşterinin bakiyesi yetersiz.']);
+
+        try {
+            $order = DB::transaction(function () use ($cashier, $tenantId, $data, $payFromBalance) {
+                // QR oturumunu KILITLE -> ayni anda iki kasiyer ayni token ile gelirse ikincisi bekler
+                $session = QrSession::where('token', $data['token'])->lockForUpdate()->first();
+                if (! $session || ! $session->isValid()) {
+                    throw new \RuntimeException('QR kod geçersiz veya süresi dolmuş.');
+                }
+
+                // Bakiye degisecekse musteriyi de kilitle (race-free balance check)
+                $customer = $payFromBalance
+                    ? User::lockForUpdate()->find($session->user_id)
+                    : User::find($session->user_id);
+                if (! $customer) {
+                    throw new \RuntimeException('Müşteri bulunamadı.');
+                }
+
+                if ($payFromBalance && (float) $customer->card_balance < (float) $data['total']) {
+                    throw new \RuntimeException('Müşterinin bakiyesi yetersiz.');
+                }
+
+                $stars = max(1, (int) floor($data['total'] / 25)); // 25 TL = 1 yildiz
+
+                $order = Order::create([
+                    'tenant_id'    => $tenantId,
+                    'bayi_id'      => $cashier->bayi_id,
+                    'store_id'     => $cashier->store_id,
+                    'user_id'      => $customer->id,
+                    'cashier_id'   => $cashier->id,
+                    'status'       => 'completed',
+                    'subtotal'     => $data['total'],
+                    'total'        => $data['total'],
+                    'currency'     => 'TRY',
+                    'stars_earned' => $stars,
+                    'note'         => $data['note'] ?? null,
+                    'placed_at'    => now(),
+                ]);
+
+                foreach ($data['items'] ?? [] as $item) {
+                    OrderItem::create([
+                        'order_id'   => $order->id,
+                        'product_id' => $item['product_id'] ?? null,
+                        'name'       => $item['name'],
+                        'unit_price' => $item['unit_price'],
+                        'quantity'   => $item['quantity'],
+                        'line_total' => $item['unit_price'] * $item['quantity'],
+                        'modifiers'  => $item['modifiers'] ?? null,
+                    ]);
+                }
+
+                $stats = $customer->statsFor($tenantId);
+                $stats->awardStars($stars, $order, "Sipariş #{$order->id}");
+                $stats->increment('lifetime_orders');
+                $stats->increment('lifetime_spent', (float) $order->total);
+                $stats->update(['last_order_at' => now()]);
+
+                if ($payFromBalance) {
+                    WalletTransaction::record([
+                        'tenant_id'  => $tenantId,
+                        'user_id'    => $customer->id,
+                        'bayi_id'    => $cashier->bayi_id,
+                        'store_id'   => $cashier->store_id,
+                        'order_id'   => $order->id,
+                        'cashier_id' => $cashier->id,
+                        'type'       => WalletTransaction::TYPE_PURCHASE,
+                        'amount'     => -1 * (float) $order->total,
+                        'reason'     => "Sipariş #{$order->id}",
+                    ]);
+                }
+
+                // QR session'i yak (kilit hala bizde, baska transaction'lar bunu goremez)
+                $session->update([
+                    'used_at' => now(),
+                    'used_by_cashier_id' => $cashier->id,
+                ]);
+
+                return $order;
+            });
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['token' => $e->getMessage()]);
         }
-
-        $order = DB::transaction(function () use ($cashier, $customer, $tenantId, $data, $session, $payFromBalance) {
-            $stars = max(1, (int) floor($data['total'] / 25)); // 25 TL = 1 yildiz
-
-            $order = Order::create([
-                'tenant_id'    => $tenantId,
-                'bayi_id'      => $cashier->bayi_id,
-                'store_id'     => $cashier->store_id,
-                'user_id'      => $customer->id,
-                'cashier_id'   => $cashier->id,
-                'status'       => 'completed',
-                'subtotal'     => $data['total'],
-                'total'        => $data['total'],
-                'currency'     => 'TRY',
-                'stars_earned' => $stars,
-                'note'         => $data['note'] ?? null,
-                'placed_at'    => now(),
-            ]);
-
-            foreach ($data['items'] ?? [] as $item) {
-                OrderItem::create([
-                    'order_id'   => $order->id,
-                    'product_id' => $item['product_id'] ?? null,
-                    'name'       => $item['name'],
-                    'unit_price' => $item['unit_price'],
-                    'quantity'   => $item['quantity'],
-                    'line_total' => $item['unit_price'] * $item['quantity'],
-                    'modifiers'  => $item['modifiers'] ?? null,
-                ]);
-            }
-
-            // Yildiz odullendir + stats guncelle
-            $stats = $customer->statsFor($tenantId);
-            $stats->awardStars($stars, $order, "Sipariş #{$order->id}");
-            $stats->increment('lifetime_orders');
-            $stats->increment('lifetime_spent', (float) $order->total);
-            $stats->update(['last_order_at' => now()]);
-
-            // Bakiyeden odendiyse cuzdana harcama satiri ekle
-            if ($payFromBalance) {
-                WalletTransaction::record([
-                    'tenant_id'  => $tenantId,
-                    'user_id'    => $customer->id,
-                    'bayi_id'    => $cashier->bayi_id,
-                    'store_id'   => $cashier->store_id,
-                    'order_id'   => $order->id,
-                    'cashier_id' => $cashier->id,
-                    'type'       => WalletTransaction::TYPE_PURCHASE,
-                    'amount'     => -1 * (float) $order->total,
-                    'reason'     => "Sipariş #{$order->id}",
-                ]);
-            }
-
-            // QR session'i yak
-            $session->update([
-                'used_at' => now(),
-                'used_by_cashier_id' => $cashier->id,
-            ]);
-
-            return $order;
-        });
 
         return redirect()->route('admin.scanner')->with('success', "Sipariş #{$order->id} oluşturuldu, +{$order->stars_earned}⭐");
     }

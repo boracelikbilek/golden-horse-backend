@@ -51,7 +51,7 @@ return [
     ],
 
     'session' => [
-        'driver'   => 'database',
+        'driver'   => 'redis', // redis | database | file
         'lifetime' => 120,
         'encrypt'  => false,
         'path'     => '/',
@@ -60,11 +60,12 @@ return [
     ],
 
     'cache' => [
-        'store' => 'database',
+        'store'  => 'redis', // redis | database | file
+        'prefix' => 'gh_cache',
     ],
 
     'queue' => [
-        'connection' => 'database',
+        'connection' => 'redis', // redis | database | sync
     ],
 
     'broadcast' => [
@@ -87,10 +88,17 @@ return [
     ],
 
     'redis' => [
-        'client'   => 'phpredis',
+        'client'   => 'phpredis', // phpredis (apt: php8.4-redis) veya predis
         'host'     => '127.0.0.1',
         'port'     => 6379,
         'password' => null,
+        // Sunucuda baska projeler de Redis kullaniyorsa cakisma olmasin diye
+        // ayri prefix ve ayri DB index'leri kullanilir.
+        'prefix'           => 'gh:',
+        'cache_db'         => 1,
+        'session_db'       => 2,
+        'queue_db'         => 3,
+        'default_db'       => 0,
     ],
 
     'bcrypt' => [
